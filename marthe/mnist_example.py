@@ -5,9 +5,10 @@ from functools import reduce
 
 import matplotlib.pyplot as plt
 
+
 class Placeholders:
 
-    def __init__(self, dim_x=28*28, dim_y=10, name='train'):
+    def __init__(self, dim_x=28 * 28, dim_y=10, name='train'):
         with tf.name_scope(name):
             dim_x = mt.as_list(dim_x)
             self.x = tf.placeholder(tf.float32, shape=[None] + dim_x, name='x')
@@ -26,50 +27,48 @@ def loss_and_acc(out, y):
     return loss, accuracy
 
 
-def mnist_example():
-
-    # data
+def mnist_example(ffnn=False):
+    # ffnn: use ffnn or CNN
     mnist = input_data.read_data_sets('mnist data', one_hot=True)
     train_p = Placeholders()
     valid_p = Placeholders(name='valid')
 
-    def fd(what, where, bs=256):
+    def fd(what, where, bs=128):
         batch = what.next_batch(bs) if bs else [what.images, what.labels]
         return {where.x: batch[0], where.y: batch[1]}
 
-    layers = [tf.layers.Dense(800, activation=tf.nn.relu),
-              tf.layers.Dense(10)]
+    if ffnn:
+        layers = [tf.layers.Dense(800, activation=tf.nn.relu),
+                  tf.layers.Dense(10)]
+    else:
+        layers = [lambda x: tf.reshape(x, [-1, 28, 28, 1]),
+                  tf.layers.Conv2D(32, 5, padding='same', activation=tf.nn.relu),
+                  tf.layers.MaxPooling2D(2, 2, 'same'),
+                  tf.layers.Conv2D(64, 5, padding='same', activation=tf.nn.relu),
+                  tf.layers.MaxPooling2D(2, 2, 'same'),
+                  tf.layers.flatten,
+                  tf.layers.Dense(1024, activation=tf.nn.relu),
+                  tf.layers.Dense(10)]
 
-    layers = [lambda x: tf.reshape(x, [-1, 28, 28, 1]),
-              tf.layers.Conv2D(32, 5, padding='same', activation=tf.nn.relu),
-              tf.layers.MaxPooling2D(2, 2, 'same'),
-              tf.layers.Conv2D(64, 5, padding='same', activation=tf.nn.relu),
-              tf.layers.MaxPooling2D(2, 2, 'same'),
-              tf.layers.flatten,
-              tf.layers.Dense(1024, activation=tf.nn.relu),
-              tf.layers.Dense(10)]
-
-    ty = rec_model(train_p.x, layers)
+    ty = rec_model(train_p.x, layers)  # use different placeholders for training and validation
     vy = rec_model(valid_p.x, layers)
 
     lt, at = loss_and_acc(ty, train_p.y)
     lv, av = loss_and_acc(vy, valid_p.y)
 
-    lr = mt.get_hyper_box_constraints('lr', 0., 0., 1.)
+    lr = mt.get_positive_hyperparameter('lr', 0.)
 
     optim_dict = mt.MomentumOptimizer(lr, 0.9).minimize(lt)
 
-    beta_prime = tf.placeholder(tf.float32)
-    marthe = mt.Marthe(tf.train.GradientDescentOptimizer(beta_prime), alpha=1.e-8)
+    marthe = mt.Marthe(beta=1.e-8 if ffnn else 1.e-14)
     marthe.compute_gradients(lv, optim_dict)
 
     ss = tf.InteractiveSession()
 
     tf.global_variables_initializer().run()
     lrr, bv, bt, bi = [], 0., 0., 0
-    for i in range(12000):
-        restarted = marthe.run(mt.merge_dicts(fd(mnist.train, train_p), fd(mnist.validation, valid_p)))
-        if restarted: lrr, bv, bt, bi = [], 0., 0., 0
+    for i in range(12000):  # around 25 epochs
+        marthe.run(mt.merge_dicts(fd(mnist.train, train_p), fd(mnist.validation, valid_p, bs=200)))
         lrr.append(lr.eval())
         if i % 100 == 0:
             accuracy_val = av.eval(fd(mnist.validation, valid_p, bs=0))

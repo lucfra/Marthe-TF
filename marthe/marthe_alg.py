@@ -42,9 +42,20 @@ def clip_and_count(t, counter, clip_val):
 
 class Marthe:
 
-    def __init__(self, outer_obj_optimizer: tf.train.Optimizer, mu='adapt', name='Marthe', gs=None, alpha='auto'):
+    def __init__(self, outer_obj_optimizer: tf.train.Optimizer=None, mu='adapt', name='Marthe', gs=None, beta=None):
         # TODO make it more similar to tf.train.Optimizer
+        """
+
+        :param outer_obj_optimizer:
+        :param mu:
+        :param name:
+        :param gs:
+        :param beta: This is the only real parameter to set. Good values seems to range between [1.e-12 and 1.e-6].
+                        It should be easier to set this beta rather than the hyper-learning rate.
+        """
         self.name = name
+        if outer_obj_optimizer is None:
+            outer_obj_optimizer = tf.train.GradientDescentOptimizer(tf.placeholder(tf.float32, name='beta_prime'))
         self._outer_object_optimizer = outer_obj_optimizer
 
         self._w_dots = []
@@ -68,12 +79,12 @@ class Marthe:
         self.c = 0.  # this doesn't matter
 
         self.beta = self._outer_object_optimizer._learning_rate   # used only if alpha is not None
+        self.beta_val, self.prev_delta = 0., 0.
 
-        self.beta_val = 0.
-        if alpha == 'auto':
+        if beta == 'auto':
             self.alpha = (1.e-2, 10.)  # initial value and decrease coefficient
         else:
-            self.alpha = alpha
+            self.alpha = beta
 
         self.hg_clip_counter = tf.Variable(0, trainable=False, name='hg_clip_counter')  # TODO ... SORRY FOR THIS
         self.alpha_clip_counter = 0
@@ -150,11 +161,15 @@ class Marthe:
         # Z_t+1 = ...
         # w_t+1 = ...
         #
+
         dct = utils.merge_dicts(fd, {self.mu_pl: self.mu_val})
-        if self.alpha:
-            # if self.beta_val is None:
-            #     self.beta_val = ss.run(self.beta)  # .eval()
-            dct[self.beta] = self.beta_val
+
+        if self.alpha is not None:  # heuristics for beta,
+            # pre-compute lr update before actually updating, this is a bit of a waste but still..
+            delta = self._hypergrads[-1].eval(dct)
+            self.beta_val = np.max([self.beta_val + self.alpha * delta*self.prev_delta, 0.])
+            self.prev_delta = delta
+            dct[self.beta] = self.beta_val  # update dictionary
 
         delta, b_t, _ = ss.run([self._hypergrads[0], self.Bs[0], self.step], dct)  # only for 1 hyper
 
@@ -165,25 +180,3 @@ class Marthe:
             q_norm = (delta * _1st_ord_cond) / (_1st_ord_cond ** 2)  # normalization
             z = np.maximum(np.minimum(q_norm, 1.), 0)  # clipping between 0, and 1
             self.mu_val = np.power(z, 1. / (self.c + 1.))
-
-        if self.alpha is not None:  # heuristics for beta
-            if isinstance(self.alpha, tuple):
-                alpha = self.alpha[0]
-                if np.isnan(self.beta_val):
-                    print(self.beta_val)
-                    print('RESTARTING')
-                    tf.global_variables_initializer().run()
-                    self.alpha = (self.alpha[0]/self.alpha[1], self.alpha[1])
-                    self.beta_val = 0.
-                    print(self.beta_val)
-            else:
-                alpha = self.alpha
-            # print(alpha)
-            delta_beta = self._hypergrads[-1].eval(dct) * delta
-            # print()
-            if clip_alpha and abs(delta_beta) > clip_alpha:
-                delta_beta = np.minimum(np.maximum(delta_beta, -clip_alpha), clip_alpha)
-                self.alpha_clip_counter += 1
-            self.beta_val = np.max([self.beta_val + alpha * delta_beta, 0.])
-
-            # print(delta_beta, 'beta_prime', self.beta_val)

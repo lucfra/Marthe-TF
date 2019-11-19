@@ -112,6 +112,13 @@ def get_hyper_box_constraints(name, value, minval, maxval, **kwargs):
     )
 
 
+def get_positive_hyperparameter(name, value, **kwargs):
+    return get_hyperparameter(
+        name, value,
+        constraint=lambda t: tf.maximum(0., t), **kwargs
+    )
+
+
 def merge_two_dicts(x, y):
     z = x.copy()  # start with x's keys and values
     z.update(y)  # modifies z with y's keys and values & returns None
