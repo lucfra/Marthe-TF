@@ -60,7 +60,7 @@ def mnist_example(ffnn=True):
 
     optim_dict = mt.MomentumOptimizer(lr, 0.9).minimize(lt)
 
-    marthe = mt.Marthe(beta=1.e-8 if ffnn else 1.e-14)
+    marthe = mt.Marthe(beta=1.e-8 if ffnn else 1.e-14)  # these are smaller that `usual` since we start with lr=0
     marthe.compute_gradients(lv, optim_dict)
 
     ss = tf.InteractiveSession()
