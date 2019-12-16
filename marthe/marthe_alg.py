@@ -46,11 +46,14 @@ class Marthe:
         # TODO make it more similar to tf.train.Optimizer
         """
 
-        :param outer_obj_optimizer:
-        :param mu:
-        :param name:
-        :param gs:
-        :param beta: This is the only real parameter to set. Good values seems to range between [1.e-12 and 1.e-6].
+        :param outer_obj_optimizer: an optimizer for the learning rate (default GradientDescent)
+                                      better not to use methods with momentum since they may overshoot the learning
+                                      rate causing divergence.
+        :param mu: float or `adapt`. If float uses a fixed dumping factor, otherwise adapts it online as described
+                            in the paper
+        :param name: Name of this object
+        :param gs:  An optional global step
+        :param beta: This is the only real parameter to set. Good values seems to range between [1.e-15 and 1.e-6].
                         It should be easier to set this beta rather than the hyper-learning rate.
         """
         self.name = name
@@ -91,10 +94,20 @@ class Marthe:
 
     def compute_gradients(self, outer_objective, optimizer_dict: OptimizerDict,
                           hyper_list=None, clip_value=None):
+        """
+        This methods populates the computational graph
+
+        :param outer_objective:  optimization objective for the learning rate (e.g. validation error)
+        :param optimizer_dict: on `OptimizerDict` (see marthe.optimizers) e.g.
+                                 opt_dict = marthe.GradientDescentOptimizer(lr).minimize(training_error)
+        :param hyper_list:   an optional list of hyperparameters (the learning rate). By default all variables
+                                in the collection `HYPERPARAMETERS`  are taken
+        :param clip_value: optional value for clipping the Marthe lr update
+        """
         assert isinstance(optimizer_dict, OptimizerDict), _ERROR_NOT_OPTIMIZER_DICT.format(optimizer_dict)
         self._opt_dict = optimizer_dict
 
-        if hyper_list is None:  # get default hyperparameters
+        if hyper_list is None:  # get default hyperparametersarameters
             hyper_list = utils.hyperparameters(tf.get_variable_scope().name)
 
         state = list(optimizer_dict.state)
@@ -150,6 +163,15 @@ class Marthe:
                 # bloody dependencies everything goes to shit
 
     def run(self, fd=None, clip_alpha=None):
+        """
+        Executes an iteration of the method
+
+        :param fd: optional dictionary of feeds for performing one step of training error optimization and one step
+                    of learning rate update. Attention: inner and outer objective computations are carried out
+                    simultaneously: use two different output tensors and relative feeds.
+        :param clip_alpha: optional clip value for the update of the hyper-learning rate
+        """
+
         ss = tf.get_default_session()
 
         # optimization step and hypergradient step. Gets the hypergradient and the [B_t]_t vector (negative gradient
@@ -167,7 +189,10 @@ class Marthe:
         if self.alpha is not None:  # heuristics for beta,
             # pre-compute lr update before actually updating, this is a bit of a waste but still..
             delta = self._hypergrads[-1].eval(dct)
-            self.beta_val = np.max([self.beta_val + self.alpha * delta*self.prev_delta, 0.])
+            upd = delta * self.prev_delta
+            if clip_alpha:
+                upd = np.min([np.max([upd, -clip_alpha]), clip_alpha])
+            self.beta_val = np.max([self.beta_val + self.alpha * upd, 0.])
             self.prev_delta = delta
             dct[self.beta] = self.beta_val  # update dictionary
 
