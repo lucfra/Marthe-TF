@@ -15,8 +15,8 @@ class Placeholders:
             self.y = tf.placeholder(tf.float32, shape=[None, dim_y], name='y')
 
 
-def rec_model(x, layers):
-    return reduce(lambda t, nl: nl(t), layers, x)
+def build_recursive_model(x, layers):
+    return reduce(lambda tensor, new_layer: new_layer(tensor), layers, x)
 
 
 def loss_and_acc(out, y):
@@ -50,17 +50,17 @@ def mnist_example(ffnn=False):
                   tf.layers.Dense(1024, activation=tf.nn.relu),
                   tf.layers.Dense(10)]
 
-    ty = rec_model(train_p.x, layers)  # use different placeholders for training and validation
-    vy = rec_model(valid_p.x, layers)
+    train_y = build_recursive_model(train_p.x, layers)  # use different placeholders for training and validation
+    valid_y = build_recursive_model(valid_p.x, layers)
 
-    lt, at = loss_and_acc(ty, train_p.y)
-    lv, av = loss_and_acc(vy, valid_p.y)
+    lt, at = loss_and_acc(train_y, train_p.y)
+    lv, av = loss_and_acc(valid_y, valid_p.y)
 
     lr = mt.get_positive_hyperparameter('lr', 0.)
 
     optim_dict = mt.MomentumOptimizer(lr, 0.9).minimize(lt)
 
-    marthe = mt.Marthe(beta=1.e-8 if ffnn else 1.e-10)
+    marthe = mt.Marthe(beta=1.e-8 if ffnn else 1.e-10)  # these are smaller that `usual` since we start with lr=0
     marthe.compute_gradients(lv, optim_dict)
 
     ss = tf.InteractiveSession()
@@ -68,7 +68,8 @@ def mnist_example(ffnn=False):
     tf.global_variables_initializer().run()
     lrr, bv, bt, bi = [], 0., 0., 0
     for i in range(12000):  # around 25 epochs
-        marthe.run(mt.merge_dicts(fd(mnist.train, train_p), fd(mnist.validation, valid_p, bs=200)))
+        feed_dict = mt.merge_dicts(fd(mnist.train, train_p), fd(mnist.validation, valid_p, bs=200))
+        marthe.run(feed_dict)
         lrr.append(lr.eval())
         if i % 100 == 0:
             accuracy_val = av.eval(fd(mnist.validation, valid_p, bs=0))
