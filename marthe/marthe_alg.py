@@ -90,7 +90,7 @@ class Marthe:
         self.alpha_clip_counter = 0
 
     def compute_gradients(self, outer_objective, optimizer_dict: OptimizerDict,
-                          hyper_list=None, clip_value=None):
+                          hyper_list=None, clip_value=100.):
         assert isinstance(optimizer_dict, OptimizerDict), _ERROR_NOT_OPTIMIZER_DICT.format(optimizer_dict)
         self._opt_dict = optimizer_dict
 
@@ -149,7 +149,7 @@ class Marthe:
                 self.step = self._opt_dict.iteration  # hopefully this still must be compiled... otherwise with these
                 # bloody dependencies everything goes to shit
 
-    def run(self, fd=None, clip_alpha=None):
+    def run(self, fd=None, clip_alpha=100.):
         ss = tf.get_default_session()
 
         # optimization step and hypergradient step. Gets the hypergradient and the [B_t]_t vector (negative gradient
@@ -167,6 +167,7 @@ class Marthe:
         if self.alpha is not None:  # heuristics for beta,
             # pre-compute lr update before actually updating, this is a bit of a waste but still..
             delta = self._hypergrads[-1].eval(dct)
+            if clip_alpha: delta = np.max([np.min([delta, clip_alpha]), -clip_alpha])
             self.beta_val = np.max([self.beta_val + self.alpha * delta*self.prev_delta, 0.])
             self.prev_delta = delta
             dct[self.beta] = self.beta_val  # update dictionary
