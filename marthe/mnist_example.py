@@ -1,30 +1,10 @@
 import marthe as mt
 import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data
-from functools import reduce
 
 import matplotlib.pyplot as plt
 
-
-class Placeholders:
-
-    def __init__(self, dim_x=28 * 28, dim_y=10, name='train'):
-        with tf.name_scope(name):
-            dim_x = mt.as_list(dim_x)
-            self.x = tf.placeholder(tf.float32, shape=[None] + dim_x, name='x')
-            self.y = tf.placeholder(tf.float32, shape=[None, dim_y], name='y')
-
-
-def build_recursive_model(x, layers):
-    return reduce(lambda tensor, new_layer: new_layer(tensor), layers, x)
-
-
-def loss_and_acc(out, y):
-    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=out))
-    correct_prediction = tf.equal(tf.argmax(out, 1), tf.argmax(y, 1))
-    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32),
-                              name='accuracy')
-    return loss, accuracy
+from marthe import build_recursive_model, loss_and_acc, Placeholders
 
 
 def mnist_example(ffnn=False):

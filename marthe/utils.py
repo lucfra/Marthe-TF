@@ -1,5 +1,10 @@
+from collections import OrderedDict
+from functools import reduce
+
 import tensorflow as tf
 import numpy as np
+
+import marthe as mt
 
 
 def dot(a, b, name=None):
@@ -132,3 +137,119 @@ def merge_dicts(*dicts):
     from functools import reduce
     # if len(dicts) == 1: return dicts[0]
     return reduce(lambda a, nd: merge_two_dicts(a, nd if nd else {}), dicts, {})
+
+
+def build_recursive_model(x, layers):
+    return reduce(lambda tensor, new_layer: new_layer(tensor), layers, x)
+
+
+def loss_and_acc(out, y):
+    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=out))
+    correct_prediction = tf.equal(tf.argmax(out, 1), tf.argmax(y, 1))
+    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32),
+                              name='accuracy')
+    return loss, accuracy
+
+
+class Placeholders:
+
+    def __init__(self, dim_x=28 * 28, dim_y=10, name='train'):
+        with tf.name_scope(name):
+            dim_x = mt.as_list(dim_x)
+            self.x = tf.placeholder(tf.float32, shape=[None] + dim_x, name='x')
+            self.y = tf.placeholder(tf.float32, shape=[None, dim_y], name='y')
+
+
+class TVT(list):
+
+    def __init__(self, lst) -> None:
+        super().__init__(lst)
+        assert len(lst) == 3
+        self.train, self.val, self.test = lst
+
+
+class LA:
+
+    def __init__(self, la):
+        self.loss, self.acc = la
+
+
+class AllPlaceholders:
+
+    def __init__(self, datasets):
+        self.datasets = datasets
+        self.plcs = TVT([Placeholders(d.dim_data, d.dim_target) for d in datasets])
+
+    def create_suppliers(self, batch_sizes):
+        return TVT([d.create_supplier(p.x, p.y, batch_size=bs) for
+                    d, p, bs in zip(self.datasets, self.plcs, batch_sizes)])
+
+    def build_recursive_outputs(self, layers):
+        return TVT([build_recursive_model(p.x, layers) for p in self.plcs])
+
+    def losses_and_accs(self, outs):
+        return TVT([LA(loss_and_acc(o, p.y)) for o, p in zip(outs, self.plcs)])
+
+
+def setup_tf(seed):
+    tf.reset_default_graph()
+    tf.set_random_seed(seed)
+    # noinspection PyTypeChecker
+    np.random.set_state(np.random.RandomState(seed).get_state())
+    if tf.get_default_session(): tf.get_default_session().close()
+    return tf.InteractiveSession()
+
+
+class Config:
+    """ Base class of a configuration instance; offers keyword initialization with easy defaults,
+    pretty printing and grid search!
+    """
+    def __init__(self, **kwargs):
+        self._version = 1
+        for k, v in kwargs.items():
+            if k in self.__dict__:
+                setattr(self, k, v)
+            else:
+                raise AttributeError('This config does not include attribute: {}'.format(k) +
+                                     '\n Available attributes with relative defaults are\n{}'.format(
+                                         str(self.default_instance())))
+
+    def __str__(self):
+        _sting_kw = lambda k, v: '{}={}'.format(k, v)
+
+        def _str_dict_pr(obj):
+            return [_sting_kw(k, v) for k, v in obj.items()] if isinstance(obj, dict) else str(obj)
+
+        return self.__class__.__name__ + '[' + '\n\t'.join(
+            _sting_kw(k, _str_dict_pr(v)) for k, v in sorted(self.__dict__.items())) + ']\n'
+
+    @classmethod
+    def default_instance(cls):
+        return cls()
+
+    @classmethod
+    def grid(cls, **kwargs):
+        """Builds a mesh grid with given keyword arguments for this Config class.
+        If the value is not a list, then it is considered fixed"""
+
+        class MncDc:
+            """This is because np.meshgrid does not always work properly..."""
+
+            def __init__(self, a):
+                self.a = a  # tuple!
+
+            def __call__(self):
+                return self.a
+
+        sin = OrderedDict({k: v for k, v in kwargs.items() if isinstance(v, list)})
+        for k, v in sin.items():
+            copy_v = []
+            for e in v:
+                copy_v.append(MncDc(e) if isinstance(e, tuple) else e)
+            sin[k] = copy_v
+
+        grd = np.array(np.meshgrid(*sin.values()), dtype=object).T.reshape(-1, len(sin.values()))
+        return [cls(**merge_dicts(
+            {k: v for k, v in kwargs.items() if not isinstance(v, list)},
+            {k: vv[i]() if isinstance(vv[i], MncDc) else vv[i] for i, k in enumerate(sin)}
+        )) for vv in grd]
