@@ -1,4 +1,4 @@
-import sys
+import time
 from collections import defaultdict
 
 from marthe import *
@@ -90,7 +90,7 @@ def load_timit(folder=TIMIT_DIR, only_primary=True, small=False, context=None,
             bnd = pd.read_csv(folder + '/timit_%sSentenceBound.csv' % name, header=None).values
             return bnd - 1
 
-        return [sentence_bound_reader(n) for n in ['rain', 'val', 'test']]
+        return [sentence_bound_reader(n) for n in ['train', 'val', 'test']]
 
     folder = folder or TIMIT_DIR
     if isinstance(process_all, bool):
@@ -159,7 +159,7 @@ class TimitExpConfig(Config):
         self.mu = 0.5  # momentum
         self.bs = 256  # mini-batch size
         self.epo = 15  # epochs
-        self.cke = 100  # check every iters
+        self.cke = 0.1  # check every iters
         self.pat = 20  # patience (times cke)
         self.seed = 1
         self.small_dts = False  # load small dataset
@@ -188,10 +188,13 @@ class TimitExpConfigMarthe(TimitExpConfig):
 
 
 def timit_exp(config: TimitExpConfig):
+    if isinstance(config, list): return [timit_exp(c) for c in config]
+
     ss = setup_tf(config.seed)
 
     print(config)
     timit = load_timit(only_primary=True, context=5, small=config.small_dts)
+    print(*[d.num_examples for d in timit])
     plcs = AllPlaceholders(timit)
 
     model = timit_ffnn()
@@ -205,25 +208,49 @@ def timit_exp(config: TimitExpConfig):
     suppliers = plcs.create_suppliers([config.bs, config.bs, None])
     tf.global_variables_initializer().run()
 
-    max_iters = timit.train.num_examples // config.bs * config.epo
-    print('TOTAL NUMBER OF ITERATIONS', max_iters)
-
     statistics = defaultdict(list)
+    iters_per_epoch = timit.train.num_examples // config.bs
+    statistics['iters per epoch'] = iters_per_epoch
 
-    for i in range(max_iters):  # implement early stopping
+    es = early_stopping(
+        config.pat, iters_per_epoch * config.epo, on_accept=lambda accept_iters, accept_val_acc:
+        update_append(statistics,
+                      accept_iters=accept_iters,
+                      accept_val_acc=accept_val_acc,
+                      accept_test_acc=lsac.test.acc.eval(suppliers.test()))
+    )
+    val_s2_size = min(timit.validation.num_examples, 50000)
+    val_supplier_2 = timit.validation.create_supplier(
+        plcs.plcs.val.x, plcs.plcs.val.y, batch_size=val_s2_size)
+
+    start_time = time.time()
+    for i in es:
         merged_exs = merge_dicts(suppliers.train(i), suppliers.val(i))
-        step(merged_exs)
+        step(merged_exs)  # for the baseline the validation supplier doesn't matter!
 
         learning_rate = ss.run(lr)
         update_append(statistics, learning_rate=learning_rate)
-        if i % config.cke == 0:
-            validation_accuracy = ss.run(lsac.val.acc, suppliers.val(i//config.cke))
+        if i % int(config.cke * iters_per_epoch) == 0:
+            # compute full validation accuracy
+            validation_accuracy = np.mean([
+                ss.run(lsac.val.acc, val_supplier_2(i))
+                for i in range(timit.validation.num_examples // val_s2_size)
+            ])
+
             test_accuracy = lsac.test.acc.eval(suppliers.test())
             update_append(statistics,
                           validation_accuracy=validation_accuracy,
-                          test_accuracy=test_accuracy)
+                          test_accuracy=test_accuracy, elapsed_time=time.time() - start_time)
             print(i, '\t', validation_accuracy, '\t', test_accuracy, '\t', learning_rate)
+            es.send(validation_accuracy)
             gz_write(statistics, config.str_for_filename())
 
-
-
+    # end
+    end_string = '{} \t experiment {} concluded.' + \
+                 '\n iters {} \t | best validation :{} \t| test: {} \t| total time {} \n'.format(
+                     time.asctime(), config.str_for_filename(), statistics['accept_iters'][-1],
+                     statistics['accept_val_acc'][-1],
+                     statistics['accept_test_acc'][-1], statistics['elapsed_time'][-1]
+                 )
+    with open('ledger.txt', 'a+') as f:
+        f.writelines(end_string)

@@ -219,6 +219,46 @@ def setup_tf(seed):
     return tf.InteractiveSession()
 
 
+def early_stopping(patience, maxiters=1e10, on_accept=None, on_refuse=None, on_close=None, verbose=True):
+    """
+    Generator that implements early stopping. Use `send` method to give to update the state of the generator
+    (e.g. with last validation accuracy)
+
+    :param patience:
+    :param maxiters:
+    :param on_accept: function to be executed upon acceptance of the iteration
+    :param on_refuse: function to be executed when the iteration is rejected (i.e. the value is lower then best)
+    :param on_close: function to be exectued when early stopping activates
+    :param verbose:
+    :return: a step generator
+    """
+    val = None
+    pat = patience
+    t = 0
+    while pat and t < maxiters:
+        new_val = yield t
+        if new_val is not None:
+            if val is None or new_val > val:
+                val = new_val
+                pat = patience
+                if on_accept:
+                    try:
+                        on_accept(t, val)
+                    except TypeError:
+                        try:
+                            on_accept(t)
+                        except TypeError:
+                            on_accept()
+                if verbose: print('ES t={}: Increased val accuracy: {}'.format(t, val))
+            else:
+                pat -= 1
+                if on_refuse: on_refuse(t)
+        else:
+            t += 1
+    # yield t
+    if on_close: on_close(val)
+    if verbose: print('ES: ending after', t, 'iterations')
+
 class Config:
     """ Base class of a configuration instance; offers keyword initialization with easy defaults,
     pretty printing and grid search!
