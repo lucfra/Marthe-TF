@@ -1,6 +1,5 @@
-import gpu_manager
-
-gpu_manager.setup_one_gpu()
+import sys
+from collections import defaultdict
 
 from marthe import *
 import tensorflow as tf
@@ -91,7 +90,7 @@ def load_timit(folder=TIMIT_DIR, only_primary=True, small=False, context=None,
             bnd = pd.read_csv(folder + '/timit_%sSentenceBound.csv' % name, header=None).values
             return bnd - 1
 
-        return [sentence_bound_reader(n) for n in ['train', 'val', 'test']]
+        return [sentence_bound_reader(n) for n in ['rain', 'val', 'test']]
 
     folder = folder or TIMIT_DIR
     if isinstance(process_all, bool):
@@ -148,7 +147,7 @@ def load_timit(folder=TIMIT_DIR, only_primary=True, small=False, context=None,
 
 def timit_ffnn(depth=4, units=2000, activation=None):
     if activation is None: activation = tf.nn.relu
-    return [tf.layers.Dense(units=units, activation=activation) for k in range(depth - 1)] + [
+    return [tf.layers.Dense(units=units, activation=activation) for _ in range(depth - 1)] + [
         tf.layers.Dense(units=183, activation=None)
     ]
 
@@ -157,19 +156,18 @@ class TimitExpConfig(Config):
 
     def __init__(self, **kwargs):
         self.lr0 = 0.075
-        self.momentum = 0.5
-        self.train_bs = 128
-        self.max_epochs = 15
-        self.check_every = 100
-        self.patience = 20
+        self.mu = 0.5  # momentum
+        self.bs = 256  # mini-batch size
+        self.epo = 15  # epochs
+        self.cke = 100  # check every iters
+        self.pat = 20  # patience (times cke)
         self.seed = 1
-        self.context = 5
-        self.small_dataset = False
+        self.small_dts = False  # load small dataset
         super().__init__(**kwargs)
 
     def lr_and_step(self, loss):
-        step = tf.train.MomentumOptimizer(self.lr0, self.momentum).minimize(loss)
-        return self.lr0, lambda fd: step.run(fd)
+        step = tf.train.MomentumOptimizer(self.lr0, self.mu).minimize(loss)
+        return tf.convert_to_tensor(self.lr0), lambda fd: step.run(fd)
 
 
 class TimitExpConfigMarthe(TimitExpConfig):
@@ -181,7 +179,7 @@ class TimitExpConfigMarthe(TimitExpConfig):
     def lr_and_step(self, loss):
         lr = get_positive_hyperparameter('lr', self.lr0)
 
-        optimizer = MomentumOptimizer(lr, self.momentum)
+        optimizer = MomentumOptimizer(lr, self.mu)
 
         opt_dict = optimizer.minimize(loss[0])
         marthe = Marthe(beta=self.beta)
@@ -192,8 +190,8 @@ class TimitExpConfigMarthe(TimitExpConfig):
 def timit_exp(config: TimitExpConfig):
     ss = setup_tf(config.seed)
 
-    timit = load_timit(only_primary=True, context=config.context,
-                       small=config.small_dataset)
+    print(config)
+    timit = load_timit(only_primary=True, context=5, small=config.small_dts)
     plcs = AllPlaceholders(timit)
 
     model = timit_ffnn()
@@ -201,46 +199,31 @@ def timit_exp(config: TimitExpConfig):
     lsac = plcs.losses_and_accs(outs)
 
     lr, step = config.lr_and_step([lsac.train.loss, lsac.val.loss]
-                       if isinstance(config, TimitExpConfigMarthe)
-                       else lsac.train.loss)
+                                  if isinstance(config, TimitExpConfigMarthe)
+                                  else lsac.train.loss)
 
-    suppliers = plcs.create_suppliers([config.train_bs, config.train_bs, None])
+    suppliers = plcs.create_suppliers([config.bs, config.bs, None])
     tf.global_variables_initializer().run()
 
-    iters = timit.train.num_examples//config.train_bs * config.max_epochs
-    print('TOTAL NUMBER OF ITERATIONS', iters)
+    max_iters = timit.train.num_examples // config.bs * config.epo
+    print('TOTAL NUMBER OF ITERATIONS', max_iters)
 
-    for i in range(iters):
+    statistics = defaultdict(list)
+
+    for i in range(max_iters):  # implement early stopping
         merged_exs = merge_dicts(suppliers.train(i), suppliers.val(i))
         step(merged_exs)
 
-        if i % config.check_every == 0:
-            eva = ss.run(lsac.val.acc, suppliers.val(-1))
-            etst = lsac.test.acc.eval(suppliers.test())
-            lrv = ss.run(lr)
-            print(i, '\t', eva, '\t', etst, '\t', lrv)
+        learning_rate = ss.run(lr)
+        update_append(statistics, learning_rate=learning_rate)
+        if i % config.cke == 0:
+            validation_accuracy = ss.run(lsac.val.acc, suppliers.val(i//config.cke))
+            test_accuracy = lsac.test.acc.eval(suppliers.test())
+            update_append(statistics,
+                          validation_accuracy=validation_accuracy,
+                          test_accuracy=test_accuracy)
+            print(i, '\t', validation_accuracy, '\t', test_accuracy, '\t', learning_rate)
+            gz_write(statistics, config.str_for_filename())
 
 
-if __name__ == '__main__':
-    timit_exp(TimitExpConfigMarthe())
-    # marthe_timit(beta=1.e-5)
-    # baseline()
 
-    # timit = load_timit(folder='/home/common/DATASETS/timit4python',only_primary=True, context=5)
-    # print(timit)
-    #
-    # print(timit.train)
-    #
-    # print(timit.validation)
-    #
-    # print(timit.test)
-    #
-    # x, y = tf.placeholder(tf.float32), tf.placeholder(tf.float32)
-    #
-    # bs_gen = timit.train.create_supplier(x, y, batch_size=100)
-    #
-    # print(bs_gen(0))
-    #
-    # print(bs_gen(1))
-    #
-    # print(timit.train.dim_data, timit.train.dim_target)

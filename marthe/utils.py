@@ -1,3 +1,5 @@
+import gzip
+import pickle
 from collections import OrderedDict
 from functools import reduce
 
@@ -191,6 +193,23 @@ class AllPlaceholders:
         return TVT([LA(loss_and_acc(o, p.y)) for o, p in zip(outs, self.plcs)])
 
 
+def update_append(dct, **updates):  # for saving statistics
+    for k, e in updates.items():
+        dct[k].append(e)
+
+
+def gz_read(name):
+    name = '{}.gz'.format(name)
+    with gzip.open(name, 'rb') as f:
+        return pickle.load(f)
+
+
+def gz_write(content, name):
+    name = '{}.gz'.format(name)
+    with gzip.open(name, 'wb') as f:
+        pickle.dump(content, f)
+
+
 def setup_tf(seed):
     tf.reset_default_graph()
     tf.set_random_seed(seed)
@@ -222,6 +241,12 @@ class Config:
 
         return self.__class__.__name__ + '[' + '\n\t'.join(
             _sting_kw(k, _str_dict_pr(v)) for k, v in sorted(self.__dict__.items())) + ']\n'
+
+    def str_for_filename(self):
+        name = str(self)
+        return name.replace('\n', ' ').replace('\t', '')
+        # name.replace('\t', '')
+
 
     @classmethod
     def default_instance(cls):
