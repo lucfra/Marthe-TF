@@ -1,4 +1,5 @@
 import time
+from datetime import timedelta
 from collections import defaultdict
 
 from marthe import *
@@ -193,6 +194,7 @@ def timit_exp(config: TimitExpConfig):
 
     print(config)
     timit = load_timit(only_primary=True, context=5, small=config.small_dts)
+    # find a good way to load the data only once  (use DataConfig!)
     print(*[d.num_examples for d in timit])
     plcs = AllPlaceholders(timit)
 
@@ -236,7 +238,7 @@ def timit_exp(config: TimitExpConfig):
             test_accuracy = lsac.test.acc.eval(suppliers.test())
             update_append(statistics,
                           validation_accuracy=validation_accuracy,
-                          test_accuracy=test_accuracy, elapsed_time=time.time() - start_time)
+                          test_accuracy=test_accuracy, elapsed_time=str(timedelta(seconds=time.time() - start_time)))
             print(i, '\t', validation_accuracy, '\t', test_accuracy, '\t', learning_rate)
             es.send(validation_accuracy)
             gz_write(statistics, config.str_for_filename())
