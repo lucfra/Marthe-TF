@@ -255,16 +255,17 @@ def early_stopping(patience, maxiters=1e10, on_accept=None, on_refuse=None, on_c
                 if on_refuse: on_refuse(t)
         else:
             t += 1
-    # yield t
+    yield t
     if on_close: on_close(val)
-    if verbose: print('ES: ending after', t, 'iterations')
+    if verbose: print('ES: ending after', t, 'iterations', 'patience=', pat)
+
 
 class Config:
     """ Base class of a configuration instance; offers keyword initialization with easy defaults,
     pretty printing and grid search!
     """
     def __init__(self, **kwargs):
-        self._version = 1
+        self._v = 2  # version
         for k, v in kwargs.items():
             if k in self.__dict__:
                 setattr(self, k, v)
@@ -286,7 +287,6 @@ class Config:
         name = str(self)
         return name.replace('\n', ' ').replace('\t', '')
         # name.replace('\t', '')
-
 
     @classmethod
     def default_instance(cls):

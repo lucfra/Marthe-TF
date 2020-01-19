@@ -158,7 +158,7 @@ class TimitExpConfig(Config):
         self.lr0 = 0.075
         self.mu = 0.5  # momentum
         self.bs = 256  # mini-batch size
-        self.epo = 15  # epochs
+        self.epo = 20  # epochs
         self.cke = 0.1  # check every iters
         self.pat = 20  # patience (times cke)
         self.seed = 1
@@ -189,7 +189,6 @@ class TimitExpConfigMarthe(TimitExpConfig):
 
 def timit_exp(config: TimitExpConfig):
     if isinstance(config, list): return [timit_exp(c) for c in config]
-
     ss = setup_tf(config.seed)
 
     print(config)
@@ -214,10 +213,7 @@ def timit_exp(config: TimitExpConfig):
 
     es = early_stopping(
         config.pat, iters_per_epoch * config.epo, on_accept=lambda accept_iters, accept_val_acc:
-        update_append(statistics,
-                      accept_iters=accept_iters,
-                      accept_val_acc=accept_val_acc,
-                      accept_test_acc=lsac.test.acc.eval(suppliers.test()))
+        update_append(statistics, es_accept=(accept_iters, accept_val_acc, lsac.test.acc.eval(suppliers.test())))
     )
     val_s2_size = min(timit.validation.num_examples, 50000)
     val_supplier_2 = timit.validation.create_supplier(
@@ -246,11 +242,9 @@ def timit_exp(config: TimitExpConfig):
             gz_write(statistics, config.str_for_filename())
 
     # end
-    end_string = '{} \t experiment {} concluded.' + \
-                 '\n iters {} \t | best validation :{} \t| test: {} \t| total time {} \n'.format(
-                     time.asctime(), config.str_for_filename(), statistics['accept_iters'][-1],
-                     statistics['accept_val_acc'][-1],
-                     statistics['accept_test_acc'][-1], statistics['elapsed_time'][-1]
+    end_string = '{} \t experiment {} concluded.'.format(time.asctime(), config.str_for_filename()) + \
+                 '\n iters, valid, test = {}  \t| total time {} \n'.format(
+                     statistics['es accept'][-1], statistics['elapsed_time'][-1]
                  )
     with open('ledger.txt', 'a+') as f:
         f.writelines(end_string)
