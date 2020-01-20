@@ -6,7 +6,7 @@ gpu_manager.setup_one_gpu()
 from marthe.timit_main import *
 
 if __name__ == '__main__':
-    mode = int(sys.argv[1]) if len(sys.argv) > 1 else -1
+    mode = int(sys.argv[1]) if len(sys.argv) > 1 else 30
     exp_config = None
     # tests
     if mode == -2: exp_config = TimitExpConfig.grid(
@@ -19,8 +19,20 @@ if __name__ == '__main__':
                                                    seed=seeds)  # baseline
 
     # marthe
-    if mode == 1: exp_config = TimitExpConfigMarthe.grid(beta=1.e-5, seed=seeds)
+    if mode == 1: exp_config = TimitExpConfigMarthe.grid(beta=1.e-5, seed=seeds)  # this seems not to work
     if mode == 2: exp_config = TimitExpConfigMarthe.grid(beta=1.e-6, seed=seeds)
     if mode == 3: exp_config = TimitExpConfigMarthe.grid(beta=1.e-7, seed=seeds)
     if mode == 4: exp_config = TimitExpConfigMarthe.grid(beta=1.e-8, seed=seeds)
+
+    # exponential decay
+    # test
+    if mode == 10: exp_config = TimitExpConfigExpDecay(dr=.98, small_dts=True, epo=2)
+
+    # HD
+    if mode == 20: exp_config = TimitExpConfigHD(small_dts=True, epo=2, beta=1.e-5)
+
+    # RTHO
+    if mode == 30: exp_config = TimitExpConfigRTHO(small_dts=True, epo=2, beta=1.e-5)
+
+    # --------------------------------------------------
     timit_exp(exp_config)

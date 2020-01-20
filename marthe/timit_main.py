@@ -158,7 +158,7 @@ class TimitExpConfig(Config):
     def __init__(self, **kwargs):
         self.lr0 = 0.075
         self.mu = 0.5  # momentum
-        self.bs = 256  # mini-batch size
+        self.bs = 200  # mini-batch size
         self.epo = 20  # epochs
         self.cke = 0.1  # check every iters
         self.pat = 20  # patience (times cke)
@@ -166,18 +166,22 @@ class TimitExpConfig(Config):
         self.small_dts = False  # load small dataset
         super().__init__(**kwargs)
 
-    def lr_and_step(self, loss):
+    def lr_and_step(self, loss, gs, iters_per_epoch):
         step = tf.train.MomentumOptimizer(self.lr0, self.mu).minimize(loss)
         return tf.convert_to_tensor(self.lr0), lambda fd: step.run(fd)
 
 
-class TimitExpConfigMarthe(TimitExpConfig):
+class _ExpConfWithValid(TimitExpConfig):
+    pass
+
+
+class TimitExpConfigMarthe(_ExpConfWithValid):
 
     def __init__(self, **kwargs):
         self.beta = 1.e-6
         super().__init__(**kwargs)
 
-    def lr_and_step(self, loss):
+    def lr_and_step(self, loss, gs, iters_per_epoch):
         lr = get_positive_hyperparameter('lr', self.lr0)
 
         optimizer = MomentumOptimizer(lr, self.mu)
@@ -188,6 +192,44 @@ class TimitExpConfigMarthe(TimitExpConfig):
         return lr, marthe.run
 
 
+class TimitExpConfigRTHO(_ExpConfWithValid):
+
+    def __init__(self, **kwargs):
+        self.beta = 1.e-6
+        super().__init__(**kwargs)
+
+    def _lr_and_step(self, loss, mu):
+        lr = get_positive_hyperparameter('lr', self.lr0)
+
+        optimizer = MomentumOptimizer(lr, self.mu)
+
+        opt_dict = optimizer.minimize(loss[0])
+        marthe = Marthe(tf.train.GradientDescentOptimizer(self.beta), mu=mu)
+        marthe.compute_gradients(loss[1], opt_dict)
+        return lr, marthe.run
+
+    def lr_and_step(self, loss, gs, iters_per_epoch):
+        return self._lr_and_step(loss, 1.)
+
+
+class TimitExpConfigHD(TimitExpConfigRTHO):
+
+    def lr_and_step(self, loss, gs, iters_per_epoch):
+        return self._lr_and_step(loss, 0.)
+
+
+class TimitExpConfigExpDecay(TimitExpConfig):
+
+    def __init__(self, **kwargs):
+        self.dr = 1.
+        super().__init__(**kwargs)
+
+    def lr_and_step(self, loss, gs, iters_per_epoch):
+        lr = tf.train.exponential_decay(self.lr0, gs, iters_per_epoch, self.dr)
+        step = tf.train.MomentumOptimizer(lr, self.mu).minimize(loss, global_step=gs)
+        return lr, lambda fd: step.run(fd)
+
+
 def timit_exp(config: TimitExpConfig):
     if isinstance(config, list): return [timit_exp(c) for c in config]
     ss = setup_tf(config.seed)
@@ -196,22 +238,22 @@ def timit_exp(config: TimitExpConfig):
     timit = load_timit(only_primary=True, context=5, small=config.small_dts)
     # find a good way to load the data only once  (use DataConfig!)
     print(*[d.num_examples for d in timit])
-    plcs = AllPlaceholders(timit)
-
-    model = timit_ffnn()
-    outs = plcs.build_recursive_outputs(model)
-    lsac = plcs.losses_and_accs(outs)
-
-    lr, step = config.lr_and_step([lsac.train.loss, lsac.val.loss]
-                                  if isinstance(config, TimitExpConfigMarthe)
-                                  else lsac.train.loss)
-
-    suppliers = plcs.create_suppliers([config.bs, config.bs, None])
-    tf.global_variables_initializer().run()
 
     statistics = defaultdict(list)
     iters_per_epoch = timit.train.num_examples // config.bs
     statistics['iters per epoch'] = iters_per_epoch
+
+    plcs = AllPlaceholders(timit)
+    model = timit_ffnn()
+    outs = plcs.build_recursive_outputs(model)
+    lsac = plcs.losses_and_accs(outs)
+
+    lr, step = config.lr_and_step(
+        [lsac.train.loss, lsac.val.loss] if isinstance(config, _ExpConfWithValid) else lsac.train.loss,
+        tf.train.get_or_create_global_step(), iters_per_epoch)
+
+    suppliers = plcs.create_suppliers([config.bs, config.bs, None])
+    tf.global_variables_initializer().run()
 
     es = early_stopping(
         config.pat, iters_per_epoch * config.epo, on_accept=lambda accept_iters, accept_val_acc:
@@ -223,8 +265,16 @@ def timit_exp(config: TimitExpConfig):
 
     start_time = time.time()
     for i in es:
-        merged_exs = merge_dicts(suppliers.train(i), suppliers.val(i))
-        step(merged_exs)  # for the baseline the validation supplier doesn't matter!
+        if isinstance(config, TimitExpConfigHD):
+            ti = suppliers.train(max(i, i-1))  # use ''validation'' placeholder for train
+            fd = merge_dicts(suppliers.train(i),
+                             {plcs.plcs.val.x: ti[plcs.plcs.train.x],
+                              plcs.plcs.val.y: ti[plcs.plcs.train.y]})
+        elif isinstance(config, _ExpConfWithValid):
+            fd = merge_dicts(suppliers.train(i), suppliers.val(i))
+        else:
+            fd = suppliers.train(i)
+        step(fd)  # for the baseline the validation supplier doesn't matter!
 
         learning_rate = ss.run(lr)
         update_append(statistics, learning_rate=learning_rate)
@@ -238,15 +288,18 @@ def timit_exp(config: TimitExpConfig):
             test_accuracy = lsac.test.acc.eval(suppliers.test())
             update_append(statistics,
                           validation_accuracy=validation_accuracy,
-                          test_accuracy=test_accuracy, elapsed_time=str(timedelta(seconds=time.time() - start_time)))
+                          test_accuracy=test_accuracy, elapsed_time=str(timedelta(seconds=time.time() - start_time)),
+                          elapsed_time_sec=time.time() - start_time)
             print(i, '\t', validation_accuracy, '\t', test_accuracy, '\t', learning_rate)
-            es.send(validation_accuracy)
+            try:
+                es.send(validation_accuracy)
+            except StopIteration: pass
             gz_write(statistics, config.str_for_filename())
 
     # end
     end_string = '{} \t experiment {} concluded.'.format(time.asctime(), config.str_for_filename()) + \
                  '\n iters, valid, test = {}  \t| total time {} \n'.format(
-                     statistics['es accept'][-1], statistics['elapsed_time'][-1]
+                     statistics['es_accept'][-1], statistics['elapsed_time'][-1]
                  )
     with open('ledger.txt', 'a+') as f:
         f.writelines(end_string)

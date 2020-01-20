@@ -8,6 +8,8 @@ import numpy as np
 
 import marthe as mt
 
+import time
+
 
 def dot(a, b, name=None):
     """
@@ -162,7 +164,7 @@ class Placeholders:
             self.y = tf.placeholder(tf.float32, shape=[None, dim_y], name='y')
 
 
-class TVT(list):
+class TVT(list):  # train val & test
 
     def __init__(self, lst) -> None:
         super().__init__(lst)
@@ -170,7 +172,7 @@ class TVT(list):
         self.train, self.val, self.test = lst
 
 
-class LA:
+class LA:  # loss and accuracy
 
     def __init__(self, la):
         self.loss, self.acc = la
@@ -255,7 +257,6 @@ def early_stopping(patience, maxiters=1e10, on_accept=None, on_refuse=None, on_c
                 if on_refuse: on_refuse(t)
         else:
             t += 1
-    yield t
     if on_close: on_close(val)
     if verbose: print('ES: ending after', t, 'iterations', 'patience=', pat)
 
@@ -318,3 +319,20 @@ class Config:
             {k: v for k, v in kwargs.items() if not isinstance(v, list)},
             {k: vv[i]() if isinstance(vv[i], MncDc) else vv[i] for i, k in enumerate(sin)}
         )) for vv in grd]
+
+    @classmethod
+    def random(cls, budget, **kwargs):
+        """
+
+        :param budget: should be formated in hh:mm:ss  (string)
+        :param kwargs:
+        :return:
+        """
+        start_time = time.time()
+        total_time = sum(x * int(t) for x, t in zip([1, 60, 3600], reversed(budget.split(":"))))
+        while time.time() - start_time < total_time:
+            sin = OrderedDict({k: v for k, v in kwargs.items() if callable(v)})
+            yield cls(**merge_dicts(
+                {k: v for k, v in kwargs.items() if not callable(v)},
+                {k: v() for k, v in sin.items()})
+                )
