@@ -298,7 +298,7 @@ def timit_exp(config: TimitExpConfig):
             gz_write(statistics, config.str_for_filename())
 
     # end
-    end_string = '{} \t experiment {} concluded.'.format(time.asctime(), config.str_for_filename()) + \
+    end_string = '{} \t {} .'.format(time.asctime(), config.str_for_filename()) + \
                  '\n iters, valid, test = {}  \t| total time {} \n'.format(
                      statistics['es_accept'][-1], statistics['elapsed_time'][-1]
                  )

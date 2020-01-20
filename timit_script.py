@@ -10,7 +10,8 @@ if __name__ == '__main__':
     exp_config = None
     # tests
     if mode == -2: exp_config = TimitExpConfig.grid(
-        small_dts=True, epo=1, lr0=np.exp(np.linspace(np.log(0.001), np.log(0.1), 20)).tolist())
+        small_dts=True, epo=1, lr0=np.exp(np.linspace(
+            np.log(0.001), np.log(0.1), 20)).tolist())
 
     seeds = list(range(5))
     if mode == -1: exp_config = TimitExpConfig(small_dts=True, epo=2, lr0=0.2, pat=3)  # test
@@ -27,15 +28,16 @@ if __name__ == '__main__':
     # exponential decay
     if mode == 10: exp_config = TimitExpConfigExpDecay(dr=.98, small_dts=True, epo=2)
     if mode == 11: exp_config = TimitExpConfigExpDecay.random(
-        '15:00:00',  # accounts for 5 runs with 3hr budget
-        lr0=lambda: np.exp(np.log(np.random.uniform(0.001, 0.1))),
-        dr=lambda: np.random.uniform(0.9, 1.),
-        seed=lambda: np.random.choice(seeds),
+        '12:00:00', 1,  # accounts for 5 runs with 3hr budget
+        lr0=lambda rnd: np.exp(np.log(rnd.uniform(0.001, 0.1))),
+        dr=lambda rnd: rnd.uniform(0.5, 1.),
+        seed=lambda rnd: rnd.choice(seeds),
     )
 
     # HD
     if mode == 20: exp_config = TimitExpConfigHD(small_dts=True, epo=2, beta=1.e-5)
-    if mode == 21: exp_config = TimitExpConfigHD.grid(beta=[1.e-4, 1.e-5, 1.e-6, 1.e-7], seed=seeds)
+    if mode == 21: exp_config = TimitExpConfigHD.grid(beta=np.exp(np.linspace(np.log(1.e-8), np.log(1.e-3), 10)).tolist(),
+                                                      seed=seeds)
     # RTHO
     if mode == 30: exp_config = TimitExpConfigRTHO(small_dts=True, epo=2, beta=1.e-5)
     if mode == 31: exp_config = TimitExpConfigRTHO.grid(beta=[1.e-5, 1.e-6, 1.e-7, 1.e-8], seed=seeds)

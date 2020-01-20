@@ -147,11 +147,15 @@ def build_recursive_model(x, layers):
     return reduce(lambda tensor, new_layer: new_layer(tensor), layers, x)
 
 
-def loss_and_acc(out, y):
-    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=out))
-    correct_prediction = tf.equal(tf.argmax(out, 1), tf.argmax(y, 1))
-    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32),
-                              name='accuracy')
+def loss_and_acc(out, y, regression=False):
+    if regression:
+        loss = tf.reduce_mean(tf.squared_difference(out, tf.cast(y, out.dtype)))
+        accuracy = - loss  # to keep the conformity with early stopping and so on
+    else:
+        loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=y, logits=out))
+        correct_prediction = tf.equal(tf.argmax(out, 1), tf.argmax(y, 1))
+        accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32),
+                                  name='accuracy')
     return loss, accuracy
 
 
@@ -322,18 +326,19 @@ class Config:
         )) for vv in grd]
 
     @classmethod
-    def random(cls, budget, **kwargs):
+    def random(cls, budget, the_seed, **kwargs):
         """
 
         :param budget: should be formated in hh:mm:ss  (string)
         :param kwargs:
         :return:
         """
+        rnd = np.random.RandomState(the_seed)
         start_time = time.time()
         total_time = sum(x * int(t) for x, t in zip([1, 60, 3600], reversed(budget.split(":"))))
         while time.time() - start_time < total_time:
             sin = OrderedDict({k: v for k, v in kwargs.items() if callable(v)})
             yield cls(**merge_dicts(
                 {k: v for k, v in kwargs.items() if not callable(v)},
-                {k: v() for k, v in sin.items()})
+                {k: v(rnd) for k, v in sin.items()})
                 )

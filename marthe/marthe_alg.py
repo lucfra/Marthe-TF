@@ -84,10 +84,10 @@ class Marthe:
         self.beta = self._outer_object_optimizer._learning_rate   # used only if alpha is not None
         self.beta_val, self.prev_delta = 0., 0.
 
-        if beta == 'auto':
-            self.alpha = (1.e-2, 10.)  # initial value and decrease coefficient
-        else:
-            self.alpha = beta
+        # if beta == 'auto':
+        #     self.alpha = (1.e-2, 10.)  # initial value and decrease coefficient
+        # else:
+        self.alpha = beta
 
         self.hg_clip_counter = tf.Variable(0, trainable=False, name='hg_clip_counter')  # TODO ... SORRY FOR THIS
         self.alpha_clip_counter = 0
@@ -138,7 +138,7 @@ class Marthe:
 
             mu = tf.convert_to_tensor(self.mu_pl, dtype=A_w_dot[0].dtype)
 
-            if self.mu != 0:
+            if self.mu == 'adapt' or self.mu > 0:
                 self._w_dots_iterations.append(
                     [wd.assign(mu * awd + b) for wd, awd, b in zip(w_dot, A_w_dot, B)])
             else:
