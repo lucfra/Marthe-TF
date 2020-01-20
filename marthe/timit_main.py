@@ -1,6 +1,6 @@
-import time
 from datetime import timedelta
 from collections import defaultdict
+from collections import Iterator
 
 from marthe import *
 import tensorflow as tf
@@ -231,7 +231,8 @@ class TimitExpConfigExpDecay(TimitExpConfig):
 
 
 def timit_exp(config: TimitExpConfig):
-    if isinstance(config, list): return [timit_exp(c) for c in config]
+    if isinstance(config, Iterator) or isinstance(config, list):
+        return [timit_exp(c) for c in config]
     ss = setup_tf(config.seed)
 
     print(config)

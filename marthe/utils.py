@@ -257,6 +257,7 @@ def early_stopping(patience, maxiters=1e10, on_accept=None, on_refuse=None, on_c
                 if on_refuse: on_refuse(t)
         else:
             t += 1
+    yield t  # not sure this is necessary
     if on_close: on_close(val)
     if verbose: print('ES: ending after', t, 'iterations', 'patience=', pat)
 
