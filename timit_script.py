@@ -8,6 +8,9 @@ from marthe.timit_main import *
 if __name__ == '__main__':
     mode = int(sys.argv[1]) if len(sys.argv) > 1 else 11
     exp_config = None
+
+    small = mode < 0
+    timit = load_timit(only_primary=True, context=5, small=mode < 0)
     # tests
     if mode == -2: exp_config = TimitExpConfig.grid(
         small_dts=True, epo=1, lr0=np.exp(np.linspace(
@@ -53,5 +56,12 @@ if __name__ == '__main__':
     if mode == 44: exp_config = TimitExpConfigMartheFixedBeta.grid(beta=1.e-6, seed=seeds)
     if mode == 45: exp_config = TimitExpConfigMartheFixedBeta.grid(beta=1.e-7, seed=seeds)
 
+    # marthe 2!
+    values = [1.e-3/5**i for i in range(15)]
+    if mode == 100: exp_config = TimitExpConfigMarthe(beta=1.e-7)
+    if mode == 101: exp_config = TimitExpConfigMarthe(beta=1.e-5)
+    if mode == 102: exp_config = TimitExpConfigMarthe(beta=1.e-8)
+    if mode == -100: exp_config = TimitExpConfigMarthe.grid(beta=values, epo=2, pat=3, small_dts=True)  # find good beta
+
     # --------------------------------------------------
-    timit_exp(exp_config)
+    timit_exp(timit, exp_config)

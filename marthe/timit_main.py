@@ -253,15 +253,12 @@ class TimitExpConfigMartheFixedBeta(_ExpConfWithValid):
 
 
 # noinspection PyProtectedMember
-def timit_exp(config: TimitExpConfig):
+def timit_exp(timit, config: TimitExpConfig):
     if isinstance(config, Iterator) or isinstance(config, list):
-        return [timit_exp(c) for c in config]
-    ss = setup_tf(config.seed)
+        return [timit_exp(timit, c) for c in config]
 
     print(config)
-    timit = load_timit(only_primary=True, context=5, small=config.small_dts)
-    # find a good way to load the data only once  (use DataConfig!)
-    print(*[d.num_examples for d in timit])
+    ss = setup_tf(config.seed)
 
     statistics = defaultdict(list)
     iters_per_epoch = timit.train.num_examples // config.bs
@@ -302,7 +299,7 @@ def timit_exp(config: TimitExpConfig):
 
         learning_rate = ss.run(lr)
         update_append(statistics, learning_rate=learning_rate)
-        if isinstance(config, TimitExpConfigMarthe):
+        if isinstance(config, TimitExpConfigMarthe):  # stats for marthe. Move stats collection in config!
             update_append(statistics, mu=config._opt.mu_val, beta=config._opt.beta_val)
         if i % int(config.cke * iters_per_epoch) == 0:
             # compute full validation accuracy
@@ -314,10 +311,11 @@ def timit_exp(config: TimitExpConfig):
             test_accuracy = lsac.test.acc.eval(suppliers.test())
             update_append(statistics,
                           validation_accuracy=validation_accuracy,
-                          test_accuracy=test_accuracy, elapsed_time=str(timedelta(seconds=time.time() - start_time)),
+                          test_accuracy=test_accuracy,
+                          elapsed_time=str(timedelta(seconds=time.time() - start_time)),
                           elapsed_time_sec=time.time() - start_time)
             if isinstance(config, TimitExpConfigMarthe):
-                others = 'marthe adapt: {} \t {}'.format(config._opt.mu_val, config._opt.beta_val)
+                others = '\t marthe adapt: {} \t {}'.format(config._opt.mu_val, config._opt.beta_val)
             else: others = ''
             print(i, '\t', validation_accuracy, '\t', test_accuracy, '\t', learning_rate, others)
             try:

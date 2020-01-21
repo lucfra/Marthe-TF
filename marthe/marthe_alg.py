@@ -82,7 +82,7 @@ class Marthe:
         self.c = 0.  # this doesn't matter
 
         self.beta = self._outer_object_optimizer._learning_rate   # used only if alpha is not None
-        self.beta_val, self.prev_delta = 0., 0.
+        self.beta_val, self.prev_delta = 1.e-8, 0.
 
         # if beta == 'auto':
         #     self.alpha = (1.e-2, 10.)  # initial value and decrease coefficient
@@ -191,7 +191,6 @@ class Marthe:
         if self.alpha is not None:  # heuristics for beta,
             # pre-compute lr update before actually updating, this is a bit of a waste but still..
             delta = self._hypergrads[-1].eval(dct)
-            if clip_alpha: delta = np.max([np.min([delta, clip_alpha]), -clip_alpha])
             self.beta_val = np.max([self.beta_val + self.alpha * delta*self.prev_delta, 0.])
             self.prev_delta = np.array(delta)
             dct[self.beta] = self.beta_val  # update dictionary
