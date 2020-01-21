@@ -271,7 +271,7 @@ class Config:
     pretty printing and grid search!
     """
     def __init__(self, **kwargs):
-        self._v = 2  # version
+        self.vrs = 3  # version
         for k, v in kwargs.items():
             if k in self.__dict__:
                 setattr(self, k, v)
@@ -287,7 +287,7 @@ class Config:
             return [_sting_kw(k, v) for k, v in obj.items()] if isinstance(obj, dict) else str(obj)
 
         return self.__class__.__name__ + '[' + '\n\t'.join(
-            _sting_kw(k, _str_dict_pr(v)) for k, v in sorted(self.__dict__.items())) + ']\n'
+            _sting_kw(k, _str_dict_pr(v)) for k, v in sorted(self.__dict__.items()) if not k.startswith('_')) + ']\n'
 
     def str_for_filename(self):
         name = str(self)

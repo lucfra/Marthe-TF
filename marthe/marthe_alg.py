@@ -92,6 +92,8 @@ class Marthe:
         self.hg_clip_counter = tf.Variable(0, trainable=False, name='hg_clip_counter')  # TODO ... SORRY FOR THIS
         self.alpha_clip_counter = 0
 
+        self._delta = 0.
+
     def compute_gradients(self, outer_objective, optimizer_dict: OptimizerDict,
                           hyper_list=None, clip_value=100.):
         """
@@ -189,22 +191,31 @@ class Marthe:
         dct = utils.merge_dicts(fd, {self.mu_pl: self.mu_val})
 
         if self.alpha is not None:  # heuristics for beta,
-            # pre-compute lr update before actually updating, this is a bit of a waste but still..
-            delta = self._hypergrads[-1].eval(dct)
-            self.beta_val = np.max([self.beta_val + self.alpha * delta*self.prev_delta, 0.])
-            self.prev_delta = np.array(delta)
+            # delta = self._hypergrads[-1].eval(dct)
+            upd_beta = self._delta*self.prev_delta
+            # print(self._delta, self.prev_delta)
+            if clip_alpha: upd_beta = np.max([np.min([upd_beta, clip_alpha]), -clip_alpha])
+            self.beta_val = np.max([self.beta_val + self.alpha * upd_beta, 0.])
+            self.prev_delta = np.array(self._delta)
             dct[self.beta] = self.beta_val  # update dictionary
 
-        delta, b_t, _ = ss.run([self._hypergrads[0], self.Bs[0], self.step], dct)  # only for 1 hyper
+        if self.mu == 'adapt' or self.alpha is not None:
+            delta, b_t = ss.run([self._hypergrads[0], self.Bs[0]], dct)  # only for 1 hyper
+            # print('CHECK THIS', self._hyper_list[0].eval(), '\t', self.beta_val, '\t', delta)
+            self._delta = delta  # save for updating mu and beta
+        # b_t is for mu
+        ss.run(self.step, dct)  # even though these 2 instructions could be run togheter.. you never know with tf....
+
+        # print('after:', self._hyper_list[0].eval())
 
         if self.mu == 'adapt':
             e_t_1 = ss.run(self.vec_outer_obj_grads, fd)  # outer_objective grad  \nabla E(w_{t+1})
             _1st_ord_cond = np.dot(e_t_1, b_t)  # scalar product: for sgd:  -\nabla L(w_t) \cdot \nabla E(w_{t+1}
 
             # IMPORTANT, validation and training loss grads should be computed at different steps!
-            q_norm = delta / _1st_ord_cond  # normalization
+            q_norm = self._delta/ _1st_ord_cond  # normalization
 
             z = np.maximum(np.minimum(q_norm, 1.), 0)  # clipping between 0, and 1
 
-            self.c = self.c * np.sign(self.mu_val) + self.mu_val
+            self.c = (self.c + 1)*self.mu_val
             self.mu_val = np.power(z, 1. / (self.c + 1.))

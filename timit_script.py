@@ -57,11 +57,15 @@ if __name__ == '__main__':
     if mode == 45: exp_config = TimitExpConfigMartheFixedBeta.grid(beta=1.e-7, seed=seeds)
 
     # marthe 2!
-    values = [1.e-3/5**i for i in range(15)]
-    if mode == 100: exp_config = TimitExpConfigMarthe(beta=1.e-7)
-    if mode == 101: exp_config = TimitExpConfigMarthe(beta=1.e-5)
+
+    if mode == 99: exp_config = TimitExpConfigMarthe(beta=1.e-5)
+    if mode == 100: exp_config = TimitExpConfigMarthe(beta=1.e-6)
+    if mode == 101: exp_config = TimitExpConfigMarthe(beta=1.e-7)
     if mode == 102: exp_config = TimitExpConfigMarthe(beta=1.e-8)
+    # test mu
+    values = [1.e-3 / 5 ** i for i in range(15)]
     if mode == -100: exp_config = TimitExpConfigMarthe.grid(beta=values, epo=2, pat=3, small_dts=True)  # find good beta
+    if mode == -101: exp_config = TimitExpConfigMarthe(beta=1.e-6, _verb=True)
 
     # --------------------------------------------------
     timit_exp(timit, exp_config)

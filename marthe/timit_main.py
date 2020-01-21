@@ -165,6 +165,7 @@ class TimitExpConfig(Config):
         self.seed = 1
         self.small_dts = False  # load small dataset
         self._opt = None
+        self._verb = False
         super().__init__(**kwargs)
 
     def lr_and_step(self, loss, gs, iters_per_epoch):
@@ -301,6 +302,8 @@ def timit_exp(timit, config: TimitExpConfig):
         update_append(statistics, learning_rate=learning_rate)
         if isinstance(config, TimitExpConfigMarthe):  # stats for marthe. Move stats collection in config!
             update_append(statistics, mu=config._opt.mu_val, beta=config._opt.beta_val)
+            if config._verb:
+                print(learning_rate, '\t', config._opt.mu_val, '\t', config._opt.beta_val)
         if i % int(config.cke * iters_per_epoch) == 0:
             # compute full validation accuracy
             validation_accuracy = np.mean([
@@ -330,3 +333,10 @@ def timit_exp(timit, config: TimitExpConfig):
                  )
     with open('ledger.txt', 'a+') as f:
         f.writelines(end_string)
+
+
+if __name__ == '__main__':
+    cnf = TimitExpConfigMarthe()
+    print(cnf)
+
+    print(cnf.str_for_filename())
