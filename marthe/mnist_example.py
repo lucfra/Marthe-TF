@@ -22,7 +22,7 @@ def mnist_example(ffnn=False):
                   tf.layers.Dense(10)]
     else:
         layers = [lambda x: tf.reshape(x, [-1, 28, 28, 1]),
-                  tf.layers.Conv2D(32, 5, padding='same', activation=tf.nn.relu),
+                  tf.layers.Conv2D(32, 5, padding='same', activation=None),
                   tf.layers.MaxPooling2D(2, 2, 'same'),
                   tf.layers.Conv2D(64, 5, padding='same', activation=tf.nn.relu),
                   tf.layers.MaxPooling2D(2, 2, 'same'),

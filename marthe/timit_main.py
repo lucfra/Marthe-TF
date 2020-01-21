@@ -164,11 +164,26 @@ class TimitExpConfig(Config):
         self.pat = 20  # patience (times cke)
         self.seed = 1
         self.small_dts = False  # load small dataset
+        self._opt = None
         super().__init__(**kwargs)
 
     def lr_and_step(self, loss, gs, iters_per_epoch):
-        step = tf.train.MomentumOptimizer(self.lr0, self.mu).minimize(loss)
+        self._opt = tf.train.MomentumOptimizer(self.lr0, self.mu)
+        step = self._opt.minimize(loss)
         return tf.convert_to_tensor(self.lr0), lambda fd: step.run(fd)
+
+
+class TimitExpConfigExpDecay(TimitExpConfig):
+
+    def __init__(self, **kwargs):
+        self.dr = 1.
+        super().__init__(**kwargs)
+
+    def lr_and_step(self, loss, gs, iters_per_epoch):
+        lr = tf.train.exponential_decay(self.lr0, gs, iters_per_epoch, self.dr)
+        self._opt = tf.train.MomentumOptimizer(lr, self.mu)
+        step = self._opt.minimize(loss, global_step=gs)
+        return lr, lambda fd: step.run(fd)
 
 
 class _ExpConfWithValid(TimitExpConfig):
@@ -187,9 +202,9 @@ class TimitExpConfigMarthe(_ExpConfWithValid):
         optimizer = MomentumOptimizer(lr, self.mu)
 
         opt_dict = optimizer.minimize(loss[0])
-        marthe = Marthe(beta=self.beta)
-        marthe.compute_gradients(loss[1], opt_dict)
-        return lr, marthe.run
+        self._opt = Marthe(beta=self.beta)
+        self._opt.compute_gradients(loss[1], opt_dict)
+        return lr, self._opt.run
 
 
 class TimitExpConfigRTHO(_ExpConfWithValid):
@@ -204,9 +219,10 @@ class TimitExpConfigRTHO(_ExpConfWithValid):
         optimizer = MomentumOptimizer(lr, self.mu)
 
         opt_dict = optimizer.minimize(loss[0])
-        marthe = Marthe(tf.train.GradientDescentOptimizer(self.beta), mu=mu)
-        marthe.compute_gradients(loss[1], opt_dict)
-        return lr, marthe.run
+        self._opt = Marthe(tf.train.GradientDescentOptimizer(self.beta), mu=mu)
+        self._opt.compute_gradients(loss[1], opt_dict)  # here for HD then the feed dicts are from training
+        # set also for val loss!
+        return lr, self._opt.run
 
     def lr_and_step(self, loss, gs, iters_per_epoch):
         return self._lr_and_step(loss, 1.)
@@ -218,18 +234,25 @@ class TimitExpConfigHD(TimitExpConfigRTHO):
         return self._lr_and_step(loss, 0.)
 
 
-class TimitExpConfigExpDecay(TimitExpConfig):
+class TimitExpConfigMartheFixedBeta(_ExpConfWithValid):
 
     def __init__(self, **kwargs):
-        self.dr = 1.
+        self.beta = 1.e-6
         super().__init__(**kwargs)
 
     def lr_and_step(self, loss, gs, iters_per_epoch):
-        lr = tf.train.exponential_decay(self.lr0, gs, iters_per_epoch, self.dr)
-        step = tf.train.MomentumOptimizer(lr, self.mu).minimize(loss, global_step=gs)
-        return lr, lambda fd: step.run(fd)
+        lr = get_positive_hyperparameter('lr', self.lr0)
+
+        optimizer = MomentumOptimizer(lr, self.mu)
+
+        opt_dict = optimizer.minimize(loss[0])
+        self._opt = Marthe(outer_obj_optimizer=tf.train.GradientDescentOptimizer(
+            self.beta))
+        self._opt.compute_gradients(loss[1], opt_dict)
+        return lr, self._opt.run
 
 
+# noinspection PyProtectedMember
 def timit_exp(config: TimitExpConfig):
     if isinstance(config, Iterator) or isinstance(config, list):
         return [timit_exp(c) for c in config]
@@ -279,6 +302,8 @@ def timit_exp(config: TimitExpConfig):
 
         learning_rate = ss.run(lr)
         update_append(statistics, learning_rate=learning_rate)
+        if isinstance(config, TimitExpConfigMarthe):
+            update_append(statistics, mu=config._opt.mu_val, beta=config._opt.beta_val)
         if i % int(config.cke * iters_per_epoch) == 0:
             # compute full validation accuracy
             validation_accuracy = np.mean([
@@ -291,7 +316,10 @@ def timit_exp(config: TimitExpConfig):
                           validation_accuracy=validation_accuracy,
                           test_accuracy=test_accuracy, elapsed_time=str(timedelta(seconds=time.time() - start_time)),
                           elapsed_time_sec=time.time() - start_time)
-            print(i, '\t', validation_accuracy, '\t', test_accuracy, '\t', learning_rate)
+            if isinstance(config, TimitExpConfigMarthe):
+                others = 'marthe adapt: {} \t {}'.format(config._opt.mu_val, config._opt.beta_val)
+            else: others = ''
+            print(i, '\t', validation_accuracy, '\t', test_accuracy, '\t', learning_rate, others)
             try:
                 es.send(validation_accuracy)
             except StopIteration: pass

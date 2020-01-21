@@ -19,6 +19,9 @@ if __name__ == '__main__':
     if mode == 0: exp_config = TimitExpConfig.grid(lr0=np.exp(np.linspace(np.log(0.001), np.log(.1), 20)).tolist(),
                                                    seed=seeds)  # baseline
 
+    # if mode == 0: exp_config = TimitExpConfig.grid(lr0=np.exp(np.linspace(np.log(0.001), np.log(.1), 20)).tolist(),
+    #                                                seed=0)  # baseline
+
     # marthe
     if mode == 1: exp_config = TimitExpConfigMarthe.grid(beta=1.e-5, seed=seeds)  # this seems not to work
     if mode == 2: exp_config = TimitExpConfigMarthe.grid(beta=1.e-6, seed=seeds)
@@ -41,6 +44,14 @@ if __name__ == '__main__':
     # RTHO
     if mode == 30: exp_config = TimitExpConfigRTHO(small_dts=True, epo=2, beta=1.e-5)
     if mode == 31: exp_config = TimitExpConfigRTHO.grid(beta=[1.e-5, 1.e-6, 1.e-7, 1.e-8], seed=seeds)
+
+    #
+    if mode == 40: exp_config = TimitExpConfigMartheFixedBeta(small_dts=True, epo=2, beta=1.e-5)
+    if mode == 41: exp_config = TimitExpConfigMartheFixedBeta.grid(beta=[1.e-4, 1.e-5, 1.e-6, 1.e-7], seed=seeds)
+    if mode == 42: exp_config = TimitExpConfigMartheFixedBeta.grid(beta=1.e-4, seed=[1])
+    if mode == 43: exp_config = TimitExpConfigMartheFixedBeta.grid(beta=1.e-5, seed=seeds)
+    if mode == 44: exp_config = TimitExpConfigMartheFixedBeta.grid(beta=1.e-6, seed=seeds)
+    if mode == 45: exp_config = TimitExpConfigMartheFixedBeta.grid(beta=1.e-7, seed=seeds)
 
     # --------------------------------------------------
     timit_exp(exp_config)

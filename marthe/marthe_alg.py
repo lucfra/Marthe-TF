@@ -154,15 +154,18 @@ class Marthe:
             self._hyper_list = hyper_list
 
         def _apply_hg():
+            print(self._hypergrads, self._hyper_list)
             return self._outer_object_optimizer.apply_gradients(list(
                 zip(self._hypergrads, self._hyper_list)), global_step=self.gs)
+
+
 
         with tf.control_dependencies([_apply_hg()]):
             with tf.control_dependencies(self._w_dots_iterations[0]):
                 self.step = self._opt_dict.iteration  # hopefully this still must be compiled... otherwise with these
                 # bloody dependencies everything goes to shit
 
-    def run(self, fd=None, clip_alpha=100.):
+    def run(self, fd=None, clip_alpha=None):
         """
         Executes an iteration of the method
 
@@ -190,7 +193,7 @@ class Marthe:
             delta = self._hypergrads[-1].eval(dct)
             if clip_alpha: delta = np.max([np.min([delta, clip_alpha]), -clip_alpha])
             self.beta_val = np.max([self.beta_val + self.alpha * delta*self.prev_delta, 0.])
-            self.prev_delta = delta
+            self.prev_delta = np.array(delta)
             dct[self.beta] = self.beta_val  # update dictionary
 
         delta, b_t, _ = ss.run([self._hypergrads[0], self.Bs[0], self.step], dct)  # only for 1 hyper
@@ -198,7 +201,11 @@ class Marthe:
         if self.mu == 'adapt':
             e_t_1 = ss.run(self.vec_outer_obj_grads, fd)  # outer_objective grad  \nabla E(w_{t+1})
             _1st_ord_cond = np.dot(e_t_1, b_t)  # scalar product: for sgd:  -\nabla L(w_t) \cdot \nabla E(w_{t+1}
+
             # IMPORTANT, validation and training loss grads should be computed at different steps!
-            q_norm = (delta * _1st_ord_cond) / (_1st_ord_cond ** 2)  # normalization
+            q_norm = delta / _1st_ord_cond  # normalization
+
             z = np.maximum(np.minimum(q_norm, 1.), 0)  # clipping between 0, and 1
+
+            self.c = self.c * np.sign(self.mu_val) + self.mu_val
             self.mu_val = np.power(z, 1. / (self.c + 1.))
