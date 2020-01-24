@@ -188,7 +188,7 @@ class Marthe:
 
         dct = utils.merge_dicts(fd, {self.mu_pl: self.mu_val})
 
-        if self.alpha is not None:  # heuristics for beta,
+        if self.alpha is not None:  # crappy heuristics for beta,
             # delta = self._hypergrads[-1].eval(dct)
             upd_beta = self._delta*self.prev_delta
             # print(self._delta, self.prev_delta)

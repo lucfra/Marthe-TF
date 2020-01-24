@@ -164,14 +164,13 @@ class TimitExpConfig(Config):
         self.pat = 20  # patience (times cke)
         self.seed = 1
         self.small_dts = False  # load small dataset
-        self._opt = None
         self._verb = False
         super().__init__(**kwargs)
 
     def lr_and_step(self, loss, gs, iters_per_epoch):
-        self._opt = tf.train.MomentumOptimizer(self.lr0, self.mu)
-        step = self._opt.minimize(loss)
-        return tf.convert_to_tensor(self.lr0), lambda fd: step.run(fd)
+        opt = tf.train.MomentumOptimizer(self.lr0, self.mu)
+        step = opt.minimize(loss)
+        return tf.convert_to_tensor(self.lr0), lambda fd: step.run(fd), opt
 
 
 class TimitExpConfigExpDecay(TimitExpConfig):
@@ -182,9 +181,9 @@ class TimitExpConfigExpDecay(TimitExpConfig):
 
     def lr_and_step(self, loss, gs, iters_per_epoch):
         lr = tf.train.exponential_decay(self.lr0, gs, iters_per_epoch, self.dr)
-        self._opt = tf.train.MomentumOptimizer(lr, self.mu)
-        step = self._opt.minimize(loss, global_step=gs)
-        return lr, lambda fd: step.run(fd)
+        opt = tf.train.MomentumOptimizer(lr, self.mu)
+        step = opt.minimize(loss, global_step=gs)
+        return lr, lambda fd: step.run(fd), opt
 
 
 class _ExpConfWithValid(TimitExpConfig):
@@ -203,9 +202,9 @@ class TimitExpConfigMarthe(_ExpConfWithValid):
         optimizer = MomentumOptimizer(lr, self.mu)
 
         opt_dict = optimizer.minimize(loss[0])
-        self._opt = Marthe(beta=self.beta)
-        self._opt.compute_gradients(loss[1], opt_dict)
-        return lr, self._opt.run
+        opt = Marthe(beta=self.beta)
+        opt.compute_gradients(loss[1], opt_dict)
+        return lr, opt.run, opt
 
 
 class TimitExpConfigRTHO(_ExpConfWithValid):
@@ -220,10 +219,10 @@ class TimitExpConfigRTHO(_ExpConfWithValid):
         optimizer = MomentumOptimizer(lr, self.mu)
 
         opt_dict = optimizer.minimize(loss[0])
-        self._opt = Marthe(tf.train.GradientDescentOptimizer(self.beta), mu=mu)
-        self._opt.compute_gradients(loss[1], opt_dict)  # here for HD then the feed dicts are from training
+        opt = Marthe(tf.train.GradientDescentOptimizer(self.beta), mu=mu)
+        opt.compute_gradients(loss[1], opt_dict)  # here for HD then the feed dicts are from training
         # set also for val loss!
-        return lr, self._opt.run
+        return lr, opt.run, opt
 
     def lr_and_step(self, loss, gs, iters_per_epoch):
         return self._lr_and_step(loss, 1.)
@@ -235,7 +234,7 @@ class TimitExpConfigHD(TimitExpConfigRTHO):
         return self._lr_and_step(loss, 0.)
 
 
-class TimitExpConfigMartheFixedBeta(_ExpConfWithValid):
+class TimitExpConfigMartheFixedBeta(TimitExpConfigMarthe):
 
     def __init__(self, **kwargs):
         self.beta = 1.e-6
@@ -247,10 +246,10 @@ class TimitExpConfigMartheFixedBeta(_ExpConfWithValid):
         optimizer = MomentumOptimizer(lr, self.mu)
 
         opt_dict = optimizer.minimize(loss[0])
-        self._opt = Marthe(outer_obj_optimizer=tf.train.GradientDescentOptimizer(
+        opt = Marthe(outer_obj_optimizer=tf.train.GradientDescentOptimizer(
             self.beta))
-        self._opt.compute_gradients(loss[1], opt_dict)
-        return lr, self._opt.run
+        opt.compute_gradients(loss[1], opt_dict)
+        return lr, opt.run, opt
 
 
 # noinspection PyProtectedMember
@@ -261,16 +260,15 @@ def timit_exp(timit, config: TimitExpConfig):
     print(config)
     ss = setup_tf(config.seed)
 
-    statistics = defaultdict(list)
     iters_per_epoch = timit.train.num_examples // config.bs
-    statistics['iters per epoch'] = iters_per_epoch
+    statistics = defaultdict(list, {'iters per epoch': iters_per_epoch, 'config': config})
 
     plcs = AllPlaceholders(timit)
     model = timit_ffnn()
     outs = plcs.build_recursive_outputs(model)
     lsac = plcs.losses_and_accs(outs)
 
-    lr, step = config.lr_and_step(
+    lr, step, opt = config.lr_and_step(
         [lsac.train.loss, lsac.val.loss] if isinstance(config, _ExpConfWithValid) else lsac.train.loss,
         tf.train.get_or_create_global_step(), iters_per_epoch)
 
@@ -301,9 +299,9 @@ def timit_exp(timit, config: TimitExpConfig):
         learning_rate = ss.run(lr)
         update_append(statistics, learning_rate=learning_rate)
         if isinstance(config, TimitExpConfigMarthe):  # stats for marthe. Move stats collection in config!
-            update_append(statistics, mu=config._opt.mu_val, beta=config._opt.beta_val)
+            update_append(statistics, mu=opt.mu_val, beta=opt.beta_val, hgs=opt._delta)
             if config._verb:
-                print(learning_rate, '\t', config._opt.mu_val, '\t', config._opt.beta_val)
+                print(learning_rate, '\t', opt.mu_val, '\t', opt.beta_val)
         if i % int(config.cke * iters_per_epoch) == 0:
             # compute full validation accuracy
             validation_accuracy = np.mean([
@@ -318,7 +316,7 @@ def timit_exp(timit, config: TimitExpConfig):
                           elapsed_time=str(timedelta(seconds=time.time() - start_time)),
                           elapsed_time_sec=time.time() - start_time)
             if isinstance(config, TimitExpConfigMarthe):
-                others = '\t marthe adapt: {} \t {}'.format(config._opt.mu_val, config._opt.beta_val)
+                others = '\t marthe adapt: {} \t {}'.format(opt.mu_val, opt.beta_val)
             else: others = ''
             print(i, '\t', validation_accuracy, '\t', test_accuracy, '\t', learning_rate, others)
             try:
