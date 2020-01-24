@@ -12,7 +12,6 @@ from tensorflow.examples.tutorials.mnist import input_data
 import marthe.timit_main as tmm
 
 
-
 class TimitCompExpConfig(Config):
 
     def __init__(self, **kwargs):
@@ -23,6 +22,7 @@ class TimitCompExpConfig(Config):
         self.cke = 0.1  # check every iters
         self.pat = 100  # large patience
         self.seed = 1
+        self._opt = None
         # self.mod = 'cnn'
         super().__init__(**kwargs)
 
@@ -65,6 +65,7 @@ class TimitCompExpConfigMarthe(_ExpConfWithValidTimitComp):
         opt_dict = optimizer.minimize(loss[0])
         marthe = Marthe(tf.train.GradientDescentOptimizer(self.beta), mu=mu)
         marthe.compute_gradients(loss[1], opt_dict)
+        self._opt = marthe
         return lr, marthe.run
 
     def lr_and_step(self, loss, gs, iters_per_epoch):
@@ -138,12 +139,14 @@ def timit_comp_exp(timit, config: TimitCompExpConfig):
             test_accuracy = lsac.test.acc.eval(suppliers.test())
             update_append(statistics,
                           ind=i,
+                          clipped_hg=config._opt.hg_clip_counter.eval(),
                           train_accuracy=train_acc,
                           validation_accuracy=validation_accuracy,
                           test_accuracy=test_accuracy, elapsed_time=str(timedelta(seconds=time.time() - start_time)),
                           elapsed_time_sec=time.time() - start_time)
 
-            print(i, '\t', train_acc, '\t', validation_accuracy, '\t', test_accuracy, '\t', learning_rate)
+            print(i, '\t', train_acc, '\t', validation_accuracy, '\t', test_accuracy, '\t', learning_rate, '\t',
+                  config._opt.hg_clip_counter.eval())
             try:
                 es.send(validation_accuracy)
             except StopIteration:

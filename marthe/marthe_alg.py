@@ -160,8 +160,6 @@ class Marthe:
             return self._outer_object_optimizer.apply_gradients(list(
                 zip(self._hypergrads, self._hyper_list)), global_step=self.gs)
 
-
-
         with tf.control_dependencies([_apply_hg()]):
             with tf.control_dependencies(self._w_dots_iterations[0]):
                 self.step = self._opt_dict.iteration  # hopefully this still must be compiled... otherwise with these
