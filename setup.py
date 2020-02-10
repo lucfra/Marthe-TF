@@ -3,7 +3,7 @@ from distutils.core import setup
 setup(
     name='marthe-tf',
     version='',
-    packages=['marthe', 'marthe.old'],
+    packages=['marthe'],
     url='',
     license='',
     author='lfranceschi',

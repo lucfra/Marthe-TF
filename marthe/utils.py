@@ -1,6 +1,6 @@
 import gzip
 import pickle
-from collections import OrderedDict
+from collections import OrderedDict, Iterator
 from functools import reduce
 
 import tensorflow as tf
@@ -286,7 +286,7 @@ class Config:
         def _str_dict_pr(obj):
             return [_sting_kw(k, v) for k, v in obj.items()] if isinstance(obj, dict) else str(obj)
 
-        return self.__class__.__name__ + '[' + '\n\t'.join(
+        return self.__class__.__name__ + '[\n' + '\n\t'.join(
             _sting_kw(k, _str_dict_pr(v)) for k, v in sorted(self.__dict__.items()) if not k.startswith('_')) + ']\n'
 
     def str_for_filename(self):
@@ -328,10 +328,12 @@ class Config:
     @classmethod
     def random(cls, budget, the_seed, **kwargs):
         """
+        Perform random search. If the value of a config parameter is not a callable, then it is considered fixed"
 
         :param budget: should be formated in hh:mm:ss  (string)
-        :param kwargs:
-        :return:
+        :param the_seed: random seed for the random search, the random state is passed as argument of the callable
+        :param kwargs: the configuarion parameters, followed by a callable
+        :return: an iterator
         """
         rnd = np.random.RandomState(the_seed)
         start_time = time.time()
@@ -342,3 +344,13 @@ class Config:
                 {k: v for k, v in kwargs.items() if not callable(v)},
                 {k: v(rnd) for k, v in sin.items()})
                 )
+
+
+def run_method_on_configs(method, config):
+    if isinstance(config, Iterator) or isinstance(config, list):
+        rss = OrderedDict()
+        for c in config:
+            setup_tf(c.sd if hasattr(c, 'sd') else None)
+            rss[c] = method(c)
+        return rss
+    else: return method(config)
